@@ -332,6 +332,43 @@ searchoutput(struct fsys_namenode *namenode)
 }
 
 static int
+searchfile_realpath(const char *file)
+{
+  struct fsys_hash_iter *iter;
+  char *real, *resolved, *namenode_real;
+  struct varbuf path = VARBUF_INIT;
+  struct fsys_namenode *namenode;
+  int found = 0;
+
+  varbuf_reset(&path);
+  varbuf_add_str(&path, "*/");
+  varbuf_add_str(&path, path_basename(file));
+  varbuf_end_str(&path);
+
+  real = realpath(file, NULL);
+  if (real == NULL) {
+    notice(_("unable to get realpath of %s; results might not be complete"), file);
+    return found;
+  }
+  iter = fsys_hash_iter_new();
+  resolved = malloc(PATH_MAX);
+  while ((namenode = fsys_hash_iter_next(iter)) != NULL) {
+    if (fnmatch(path.buf,namenode->name,0)) continue;
+    namenode_real = realpath(namenode->name, resolved);
+    if (namenode_real == NULL) {
+      notice(_("unable to get realpath of %s; results might not be complete"), namenode->name);
+    }
+    if (strcmp(real, namenode_real) != 0) continue;
+    found+= searchoutput(namenode);
+  }
+  fsys_hash_iter_free(iter);
+  free(real);
+  free(resolved);
+  varbuf_destroy(&path);
+  return found;
+}
+
+static int
 searchfiles(const char *const *argv)
 {
   const char *thisarg;
@@ -350,6 +387,9 @@ searchfiles(const char *const *argv)
     struct fsys_namenode *namenode;
     int found = 0;
 
+    if (strncmp(thisarg, "realpath:", 9) == 0) {
+      found += searchfile_realpath(&thisarg[9]);
+    } else {
     if (!strchr("*[?/",*thisarg)) {
       varbuf_reset(&vb);
       varbuf_add_char(&vb, '*');
@@ -377,6 +417,7 @@ searchfiles(const char *const *argv)
         found+= searchoutput(namenode);
       }
       fsys_hash_iter_free(iter);
+    }
     }
     if (!found) {
       notice(_("no path found matching pattern %s"), thisarg);
