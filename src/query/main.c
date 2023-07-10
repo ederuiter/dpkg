@@ -294,7 +294,7 @@ listpackages(const char *const *argv)
 }
 
 static int
-searchoutput(struct fsys_namenode *namenode)
+searchoutput(struct fsys_namenode *namenode, const char *realpath)
 {
   struct fsys_node_pkgs_iter *iter;
   struct pkginfo *pkg_owner;
@@ -327,7 +327,7 @@ searchoutput(struct fsys_namenode *namenode)
   }
   fsys_node_pkgs_iter_free(iter);
 
-  if (found) printf(": %s\n",namenode->name);
+  if (found) printf(": %s\n",realpath ? realpath : namenode->name);
   return found + (namenode->divert ? 1 : 0);
 }
 
@@ -359,7 +359,7 @@ searchfile_realpath(const char *file)
       notice(_("unable to get realpath of %s; results might not be complete"), namenode->name);
     }
     if (strcmp(real, namenode_real) != 0) continue;
-    found+= searchoutput(namenode);
+    found += searchoutput(namenode, file);
   }
   fsys_hash_iter_free(iter);
   free(real);
@@ -387,9 +387,6 @@ searchfiles(const char *const *argv)
     struct fsys_namenode *namenode;
     int found = 0;
 
-    if (strncmp(thisarg, "realpath:", 9) == 0) {
-      found += searchfile_realpath(&thisarg[9]);
-    } else {
     if (!strchr("*[?/",*thisarg)) {
       varbuf_reset(&vb);
       varbuf_add_char(&vb, '*');
@@ -407,17 +404,19 @@ searchfiles(const char *const *argv)
       varbuf_trunc(&path, path_trim_slash_slashdot(path.buf));
 
       namenode = fsys_hash_find_node(path.buf, 0);
-      found += searchoutput(namenode);
+      found += searchoutput(namenode, NULL);
+      if (!found) {
+          found += searchfile_realpath(path.buf);
+      }
     } else {
       struct fsys_hash_iter *iter;
 
       iter = fsys_hash_iter_new();
       while ((namenode = fsys_hash_iter_next(iter)) != NULL) {
         if (fnmatch(thisarg,namenode->name,0)) continue;
-        found+= searchoutput(namenode);
+        found += searchoutput(namenode, NULL);
       }
       fsys_hash_iter_free(iter);
-    }
     }
     if (!found) {
       notice(_("no path found matching pattern %s"), thisarg);
